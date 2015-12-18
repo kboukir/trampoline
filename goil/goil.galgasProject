@@ -60,7 +60,7 @@ project (2:1:26) -> "goil" {
   "galgas-sources/template_invocation.galgas"
   "galgas-sources/template_routines.galgas"
   "galgas-sources/template_functions.galgas"
-#  "galgas-sources/template_instructions.galgas"
+  "galgas-sources/gtl_instructions.galgas"
 
   "galgas-sources/goil_lexique.galgas"
   "galgas-sources/goil_options.galgas"

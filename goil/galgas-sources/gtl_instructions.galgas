@@ -1,6 +1,6 @@
-#---------------------------------------------------------------------------*
+#-----------------------------------------------------------------------------*
 #
-#  @file template_instructions.galgas
+#  @file gtl_instructions.galgas
 #
 #  @section desc File description
 #
@@ -22,193 +22,169 @@
 #  $Author$
 #  $URL$
 #
-#---------------------------------------------------------------------------*
+#-----------------------------------------------------------------------------*
 
-abstract class @gtlVarItem { @lstring itemName }
+#=============================================================================*
+# A @gtlVarItem is a part of a variable path.
+# For instance A::B["e"]::C::D[3] is a path. A is a struct, B is a field of
+# A and is a map, ["e"] is the element of the map with key "e". This element
+# is a struct with field C which is itself a struct with field D which is a
+# list and we reference the element at index 3.
+abstract class @gtlVarItem { }
+
+#=============================================================================*
+# Scalar struct field, ie A or C in the example above
 class @gtlVarItemField : @gtlVarItem { @lstring field }
-class @gtlVarItemKey :   @gtlVarItem { @lstring key   }
-class @gtlVarItemIdx :   @gtlVarItem { @lsint   idx   }
 
+#-----------------------------------------------------------------------------*
+# set a scalar field
+override method @gtlVarItemField set
+  ?!     @gtlVarMap  context
+  ?  let @gtlVarPath path
+  ?  let @gtlData    data
+{ 
+  if [path length] == 0 then
+    # at the end, set the variable in the context
+    if [context hasKey ![field string]] then
+      # A field with the same name exists, replace it
+      [!?context setMValueForKey !data ![field string]]
+    else
+      # The field does not exist, add it
+      [!?context put !field !data]
+    end
+  else
+    @gtlVarMap subContext = .emptyMap{}
+    # not at the end, get and set the subcontext
+    if [context hasKey ![field string]] then
+      # get the variable
+      [context get !field ?var @gtlData variable]
+      cast variable
+        case == @gtlStruct structVar :
+          # it is a struct
+          subContext = [structVar value]
+      end
+      # set in the subcontext
+      [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
+      # update with the result
+      [!?context setMValueForKey !@gtlStruct.new{![field location] !subContext} ![field string]]
+    else
+      # set in the subcontext
+      [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
+      # update with the result
+      [!?context put !field !@gtlStruct.new{![field location] !subContext}]
+    end
+  end
+}
+
+#=============================================================================*
+# Map item struct field, ie B in the example above
+class @gtlVarItemKey :   @gtlVarItemField { @lstring key }
+
+#-----------------------------------------------------------------------------*
+# set a map item field
+override method @gtlVarItemKey set
+  ?!     @gtlVarMap  context
+  ?  let @gtlVarPath path
+  ?  let @gtlData    data
+{ 
+  if [path length] == 0 then
+    # at the end, set the variable in the context
+    # 2 cases :
+    # 1) the variable already exists and is a map, set or replace the element
+    # 2) the variable already exists and is not a map, replace it with a map
+    #    with the item set
+    # 3) the variable does not exist, create a map and add the item
+    if [context hasKey ![field string]] then
+      # A field with the same name exists, get it
+      [!?context del !field ?var @gtlData item]
+      cast item
+        case == @gtlMap mapItem :
+          @gtlVarMap mapToSet = [mapItem value]
+          if [mapToSet hasKey ![key string]] then
+            # update it
+            [!?mapToSet setMValueForKey !data ![key string]]
+          else
+            # create it
+            [!?mapToSet put !key !data]
+          end
+          # update the context
+          [!?context put !field !@gtlMap.new{![mapItem where] !mapToSet}]
+        else
+          # not a map, create one
+          @gtlVarMap mapToSet = .emptyMap{}
+          [!?mapToSet put !key !data]
+          [!?context put !field !@gtlMap.new{![field location] !mapToSet}]
+      end  
+    else
+      # The field does not exist, add it
+      [!?context put !field !data]
+    end
+  else
+    @gtlVarMap subContext = .emptyMap{}
+    # not at the end, get and set the subcontext
+    if [context hasKey ![field string]] then
+      # get the variable
+      [!?context del !field ?var @gtlData variable]
+      cast variable
+        case == @gtlMap mapVar :
+          # it is a map, get the item corresponding to the key
+          @gtlVarMap theMap = [mapVar value]
+          if [theMap hasKey ![key string]] then
+            [!?theMap del !key ?subContext]
+          end
+          [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
+          [!?context setMValueForKey !@gtlMap.new{![field location] !subContext} ![field string]]
+        else
+          # set in the subcontext
+          [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
+          # update with the result
+          [!?context put !field !@gtlMap.new{![field location] !subContext}]
+      end
+    else
+      # set in the subcontext
+      [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
+      # update with the result
+      [!?context put !field !@gtlMap.new{![field location] !subContext}]
+    end
+  end
+}
+
+#=============================================================================*
+# List item struct field, ie D in the example above
+class @gtlVarItemIdx :   @gtlVarItemField { @lsint   idx }
+
+#=============================================================================*
+# A variable path is a list of variable items
 list @gtlVarPath {
   @gtlVarItem item
 }
 
+#-----------------------------------------------------------------------------*
+# Set a data in a path
+method @gtlVarPath setMe ?!@gtlVarMap context ?let @gtlData data
+{
+  if [self length] > 0 then
+    @gtlVarItem item = [self itemAtIndex !0]
+    [item set !?context ![self subListFromIndex !1] !data]
+  else
+    error @location.here : "INTERNAL ERROR. A @gtlVarPath should not be an empty list"
+  end
+}
+
+# abstact method to set a field in a context
+abstract method @gtlVarItem set
+  ?!     @gtlVarMap  context
+  ?  let @gtlVarPath path
+  ?  let @gtlData    data
+
+
+# A variable map is a map of variables. Used for variables of a gtl program
+# and used in struct and map of the language itself.
 map @gtlVarMap {
   @gtlData mValue 
   insert put error message "a variable or field named '%K' is already declared in %L"
   search get error message "there is no variable or field named '%K'"
   remove del error message "there is no variable or field named '%K' to delete"
-}
-
-proc setVarInPath 
-  ?@gtlVarPath path
-  ?!@gtlVarMap fieldMap
-  ?let @gtlData data
-{
-  # get the first item of the variable path
-  [!?path popFirst ?@gtlVarItem item]
-  @lstring varName = [item itemName]
-  if [fieldMap hasKey ![varName string]] then
-    [fieldMap get !varName ?@gtlData fieldValue]
-    if fieldValue is == @gtlMap then
-      # then referenced field is a map
-      if item is == @gtlVarItemKey then
-        # a key has been defined for the map,
-        @lstring key = [item as @gtlVarItemKey key]
-        @gtlVarMap items = [fieldValue as @gtlMap value]
-        if [items hasKey ![key string]] then
-          if [path length] == 0 then
-            [!?items setMValueForKey !data ![key string]]
-          else
-            [items get !key ?@gtlData keyedItem]
-            @gtlMap keyedMapItem = keyedItem as @gtlMap
-            @gtlVarMap nextFieldMap = [keyedMapItem value]
-            setVarInPath(!path !?nextFieldMap !data)
-            [!?keyedMapItem setValue !nextFieldMap]
-            [!?items setMValueForKey !keyedMapItem ![key string]]
-          end
-        else
-          if [path length] == 0 then
-            [!?items put !key !data]
-          else
-            var nextFieldMap = @gtlVarMap.emptyMap{}
-            setVarInPath(!path !?nextFieldMap !data)
-            [!?items put !key !@gtlMap.new{![[item itemName] location] !nextFieldMap}]
-          end
-        end
-        [!?fieldValue as @gtlMap setValue !items]
-        [!?fieldMap setValueForKey !fieldValue ![varName string]]
-        fieldValue.mStructValue = items
-        [!?ioFieldMap setMTypeForKey !fieldType ![varName string]]
-        [!?ioFieldMap setMValueForKey !fieldValue ![varName string]]
-      else # no key has been defined, the type is changed to
-        if [path length] == 0 then
-          # the actual type
-          [!?ioFieldMap setMTypeForKey !expressionType ![varName string]]
-          [!?ioFieldMap setMValueForKey !enumeratedValue ![varName string]]
-        else
-          # a struct type
-          var nextFieldMap =@TfieldMap.emptyMap{}
-          setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-          [!?ioFieldMap setMTypeForKey !@Ttype. structType ![varName string]]
-          [!?ioFieldMap setMValueForKey !valueWithStruct(!nextFieldMap !emptyLString()) ![varName string]]
-        end
-      end
-    elsif fieldType == @Ttype. listType then
-      # then referenced field is a list
-      if [idx sint] != -1s then
-        if [path length] == 0 then
-          if expressionType == @Ttype. structType then
-            # ok, trying to put a struct in a list item
-            @TfieldMapList theList = [fieldValue mMapListValue]
-            [!?theList setMMapAtIndex ![enumeratedValue mStructValue] ![idx uint]]
-            fieldValue.mMapListValue = theList
-          else
-            # it is an error to put something else than a struct in a list item
-            error varName: "struct expression expected"
-          end
-        else
-          # an item of the list is referenced, get it
-          @TfieldMapList theList = [fieldValue mMapListValue]
-          @TfieldMap nextFieldMap = [theList mMapAtIndex ![idx uint]]
-          setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-          [!?theList setMMapAtIndex !nextFieldMap ![idx uint]]
-          fieldValue.mMapListValue = theList
-        end
-        [!?ioFieldMap setMTypeForKey !fieldType ![varName string]]
-        [!?ioFieldMap setMValueForKey !fieldValue ![varName string]]
-      else
-        # this is the whole list
-        if [path length] == 0 then
-          # the actual type
-          [!?ioFieldMap setMTypeForKey !expressionType ![varName string]]
-          [!?ioFieldMap setMValueForKey !enumeratedValue ![varName string]]
-        else
-          # a struct type
-          var nextFieldMap =@TfieldMap.emptyMap{}
-          setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-          [!?ioFieldMap setMTypeForKey !@Ttype. structType ![varName string]]
-          [!?ioFieldMap setMValueForKey !valueWithStruct(!nextFieldMap !emptyLString()) ![varName string]]
-        end
-      end
-    elsif fieldType == @Ttype. structType then
-      if [path length] == 0 then
-        # the type is changed to the actual type
-        [!?ioFieldMap setMTypeForKey !expressionType ![varName string]]
-        [!?ioFieldMap setMValueForKey !enumeratedValue ![varName string]]
-      else
-        # the existing struct is got
-        @TfieldMap nextFieldMap = [fieldValue mStructValue]
-        setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-        # and updated
-        fieldValue.mStructValue = nextFieldMap
-        [!?ioFieldMap setMValueForKey !fieldValue ![varName string]]
-      end
-    else
-      if [key string] == "" then
-        if [idx sint] == -1s then
-          if [path length] == 0 then
-            # the type is changed to the actual type
-            [!?ioFieldMap setMTypeForKey !expressionType ![varName string]]
-            [!?ioFieldMap setMValueForKey !enumeratedValue ![varName string]]
-          else
-            var nextFieldMap =@TfieldMap.emptyMap{}
-            setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-            [!?ioFieldMap setMTypeForKey !@Ttype. structType ![varName string]]
-            [!?ioFieldMap setMValueForKey !valueWithStruct(!nextFieldMap !emptyLString()) ![varName string]]
-          end
-        else
-          # it is an error to set an item of a list it the list does not exist
-          error varName: "A list must exist before setting one of its item"
-        end
-      else
-        # create a map
-        var newMap =@TfieldMap.emptyMap{}
-        if [path length] == 0 then
-          [!?newMap insertKey !key !expressionType !enumeratedValue]
-        else
-          var nextFieldMap =@TfieldMap.emptyMap{}
-          setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-          [!?newMap insertKey !key !@Ttype. structType !valueWithStruct(!nextFieldMap !emptyLString())]
-        end
-        [!?ioFieldMap setMTypeForKey !@Ttype. mapType ![varName string]]
-        [!?ioFieldMap setMValueForKey !valueWithMap(!newMap !emptyLString()) ![varName string]]
-      end
-    end
-  else
-    # The variable does not exist
-    if [path length] == 0 then
-      if [key string] == "" then
-        if [idx sint] == -1s then
-          [!?ioFieldMap insertKey !varName !expressionType !enumeratedValue]
-        else
-          # it is an error to set an item of a list it the list does not exist
-          error varName: "A list must exist before setting one of its item"
-        end
-      else
-        var newMap =@TfieldMap.emptyMap{}
-        [!?newMap insertKey !key !expressionType !enumeratedValue]
-        [!?ioFieldMap insertKey !varName !@Ttype. mapType !valueWithMap(!newMap !emptyLString())]
-      end
-    else
-      if [key string] == "" then
-        if [idx sint] == -1s then
-          var nextFieldMap =@TfieldMap.emptyMap{}
-          setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-          [!?ioFieldMap insertKey !varName !@Ttype. structType !valueWithStruct(!nextFieldMap !emptyLString())]
-        else
-          # it is an error to set an item of a list it the list does not exist
-          error varName: "A list must exist before setting one of its item"
-        end
-      else
-        var newMap =@TfieldMap.emptyMap{}
-        var nextFieldMap =@TfieldMap.emptyMap{}
-        setVariableInPath ( !path !?nextFieldMap !expressionType !enumeratedValue)
-        [!?newMap insertKey !key !@Ttype. structType !valueWithStruct(!nextFieldMap !emptyLString())]
-        [!?ioFieldMap insertKey !varName !@Ttype. mapType !valueWithMap(!newMap !emptyLString())]
-      end
-    end
-  end
 }
 
 abstract class @gtlData { @location where %setter }
@@ -916,6 +892,6 @@ class @gtlLet           : @gtlAssign {}
 #class @gtlLetXor        : @gtlAssign {}
 
 override method @gtlLet execute ?!@gtlVarMap gtlVariableMap {
-#  [!?gtlVariableMap setVar !lValue ![rValue eval]]
+  [lValue setMe !?gtlVariableMap![rValue eval]]
 }
   
