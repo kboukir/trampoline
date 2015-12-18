@@ -130,7 +130,11 @@ override method @gtlVarItemKey set
           # it is a map, get the item corresponding to the key
           @gtlVarMap theMap = [mapVar value]
           if [theMap hasKey ![key string]] then
-            [!?theMap del !key ?subContext]
+            [!?theMap del !key ?let @gtlData subField]
+            cast subField
+              case == @gtlStruct subStruct:
+                subContext = [subStruct value]
+            end
           end
           [[path itemAtIndex !0] set !?subContext ![path subListFromIndex !1] !data]
           [!?context setMValueForKey !@gtlMap.new{![field location] !subContext} ![field string]]
