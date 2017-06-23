@@ -7,7 +7,7 @@ IMPLEMENTATION posix {
         STRING CFLAGS[];
         STRING CPPFLAGS[];
         STRING ASFLAGS[];
-        STRING LDFLAGS[];
+        STRING LDFLAGS[] = "-lrt -lpthread";
         STRING APP_NAME = "trampoline";
         STRING TRAMPOLINE_BASE_PATH = "..";
         STRING COMPILER = "gcc";
